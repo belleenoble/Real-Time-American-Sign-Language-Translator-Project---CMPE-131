@@ -18,5 +18,12 @@
   - Track important hand landmarks
   - Recognize a selected set of ASL letters or signs
   - Display the detected letter or word.
-  - Allow multiple signs to be recognized. 
+  - Allow multiple signs to be recognized.
+
+## Background 
+  - MediaPipe Framework:
+      - A computer vision framework provided by Google that has a hand land marker that can effectively identify 21 landmark points on each hand.
+      - Supports image, video, and live-streaming processing
+  - OpenCV
+      - OpenCV is used to access the webcam   
 
