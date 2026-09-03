@@ -1,4 +1,4 @@
-# Real-Time-American-Sign-Language-Translator-Project---CMPE-131
+# Real-Time-American-Sign-Language-Translator-Project | CMPE-131
 
 ## Goal: 
 - Develop a real-time American Sign Language recognition system using Python, computer vision principles, and MediaPipe. The program should use a webcam to detect a user’s hand movements and recognize selected ASL letters, numbers, or common signs. When the user starts to “sign,” the corresponding English letter or word will be displayed on the screen. 
