@@ -27,3 +27,5 @@
   - OpenCV
       - OpenCV is used to access the webcam   
 
+## Implementation
+TBD
