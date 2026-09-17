@@ -1,0 +1,7 @@
+Just some notes if yall were curious about the code:
+
+train_model.py
+    
+    Paths: Paths established at the top of the program.
+    - joblib: python library for saving and loading python objects
+              helps handle large numpy arrays / matrices (what we need i found out about it on google)
