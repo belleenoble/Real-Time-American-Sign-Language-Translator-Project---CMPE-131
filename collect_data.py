@@ -8,7 +8,7 @@ import numpy as np
 
 
 MODEL_PATH = "models/hand_landmarker.task"
-DATA_PATH = "data/landmarks.csv"
+STATIC_DATA_PATH = "data/landmarks.csv"
 MOTION_DATA_PATH = "data/motion_landmarks.csv" #added it for J and Z (only motion signs) 
 
 #Static signs are everything)
@@ -86,7 +86,7 @@ options = HandLandmarkerOptions(
 )
 
 #needed to add motion file for other letters (j and z)
-static_file_exists = os.path.exists(DATA_PATH) and os.path.getsize(DATA_PATH) > 0
+static_file_exists = os.path.exists(STATIC_DATA_PATH) and os.path.getsize(STATIC_DATA_PATH) > 0
 motion_file_exists = os.path.exists(MOTION_DATA_PATH) and os.path.getsize(MOTION_DATA_PATH) > 0
 
 camera = cv2.VideoCapture(0)
@@ -96,8 +96,8 @@ if not camera.isOpened():
     raise SystemExit
 
 #static collection state
-active_letter = None
-sample_count = 0
+active_static_sign = None
+static_sample_count = 0
 frame_count = 0
 
 #motion collection state 
@@ -145,31 +145,31 @@ try:
 
             frame_count += 1
 
-                if result.hand_landmarks:
-                    landmarks = result.hand_landmarks[0]
-                    hand_name = result.handedness[0][0].category_name
+            if result.hand_landmarks:
+                landmarks = result.hand_landmarks[0]
+                hand_name = result.handedness[0][0].category_name
 
-                    height, width, _ = frame.shape
+                height, width, _ = frame.shape
 
-                    # Draw the landmark dots
-                    for point in landmarks:
-                        x = int(point.x * width)
-                        y = int(point.y * height)
-                        cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)
+                # Draw the landmark dots
+                for point in landmarks:
+                    x = int(point.x * width)
+                    y = int(point.y * height)
+                    cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)
 
-                    features = normalize_landmarks(landmarks, hand_name)
+                features = normalize_landmarks(landmarks, hand_name)
 
-                    #static sign collection: making it one sample for every two frame to avoid duplicates and to give the user time to change the sign
+                # static sign collection: making it one sample for every two frames to avoid duplicates and to give the user time to change the sign
 
-                    if active_letter and frame_count % 2 == 0:
-                        static_writer.writerow([active_static_sign, *features])
-                        static_file.flush()
-                        static_sample_count += 1
+                if active_static_sign and frame_count % 2 == 0:
+                    static_writer.writerow([active_static_sign, *features])
+                    static_file.flush()
+                    static_sample_count += 1
 
-                        if static_sample_count >= SAMPLES_PER_SIGN:
-                            print(f"Finished collecting {active_static_sign}")
-                            active_static_sign = None
-                            static_sample_count = 0
+                    if static_sample_count >= SAMPLES_PER_SIGN:
+                        print(f"Finished collecting {active_static_sign}")
+                        active_static_sign = None
+                        static_sample_count = 0
 
                     #motion sign collection: making it one sample for every two frame to avoid duplicates and to give the user time to change the sign
                     if recording_sequence:
@@ -264,7 +264,7 @@ try:
                         static_sample_count = 0
                         print(f"Collecting static sign {selected}...")
 
-                    elif selected in MOTION_SIGNS and no active_sign:
+                    elif selected in MOTION_SIGNS and no_active_sign:
                         active_motion_sign = selected
                         motion_sequence_count = 0
                         current_sequence = []

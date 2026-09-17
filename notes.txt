@@ -9,3 +9,4 @@ train_model.py
     -sklearn.ensemble / RandomForestClassifer: imports the classifier algorithms needed for training the train_model    
     -os.makedir("models",exist_ok=True): Creates the models in the folder if its missing
     
+As of 9/16/26 we can officially train the model with the new collect_data.py and train_model.py file i updated (shoudl work for both motion and static)
