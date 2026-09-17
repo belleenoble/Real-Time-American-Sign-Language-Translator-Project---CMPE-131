@@ -12,3 +12,7 @@ train_model.py
     
 As of 9/16/26 we can officially train the model with the new collect_data.py and train_model.py file i updated (shoudl work for both motion and static)
  - to train the model put python collect_data.py in the terminal!
+ - then go to recognize, and put `python train_model.py`
+
+ (an error that needs to be fixed is the fact that you cant train "q" bc its the quit button. maybe if someone can change to esc)
+    

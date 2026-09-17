@@ -40,7 +40,7 @@ def train_classifier(data_path, model_path, sign_type):
     feature = data.drop(columns=["label"]).values
     label = data["label"].values
 
-    feature_train, feature_test, labels_train, labels_test = train_test_split(feature, label, test_size=0.2, random_state=42, stratify=labels)
+    feature_train, feature_test, labels_train, labels_test = train_test_split(feature, label, test_size=0.2, random_state=42, stratify=label)
 
     model = RandomForestClassifier(n_estimators=200, random_state=42, n_jobs=-1)
     model.fit(feature_train, labels_train)
