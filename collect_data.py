@@ -9,6 +9,7 @@ import numpy as np
 
 MODEL_PATH = "models/hand_landmarker.task"
 DATA_PATH = "data/landmarks.csv"
+MOTION_DATA_PATH = "data/motion_landmarks.csv"
 
 LETTERS = ["A", "B", "C", "D", "E"]
 SAMPLES_PER_LETTER = 200
