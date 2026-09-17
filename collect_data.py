@@ -12,15 +12,15 @@ STATIC_DATA_PATH = "data/landmarks.csv"
 MOTION_DATA_PATH = "data/motion_landmarks.csv" #added it for J and Z (only motion signs) 
 
 #Static signs are everything)
-STATIC_LETTERS = [c for c in "ABCDEFGHIKLMNOPQRSTUVWX"]  
+STATIC_LETTERS = [c for c in "ABCDEFGHIKLMNOPQRSTUVWXY"]  
 DIGITS = [str(d) for d in range(10)]
 STATIC_SIGNS = STATIC_LETTERS + DIGITS
-SAMPLES_PER_LETTER = 200
+SAMPLES_PER_SIGN = 200
 
 #motion signs are J and Z (only motion signs) for the alphabet
 MOTION_SIGNS = ["J", "Z"]
 SEQUENCE_LENGTH = 20
-SEQUENCE_PER_SIGN = 100
+SEQUENCES_PER_SIGN = 100
 
 os.makedirs("data", exist_ok=True)
 
@@ -171,114 +171,109 @@ try:
                         active_static_sign = None
                         static_sample_count = 0
 
-                    #motion sign collection: making it one sample for every two frame to avoid duplicates and to give the user time to change the sign
-                    if recording_sequence:
-                        current_sequence.append(features)
+                #motion sign collection: making it one sample for every two frame to avoid duplicates and to give the user time to change the sign
+                if recording_sequence:
+                    current_sequence.append(features)
 
-                        if len(current_sequence) >= SEQUENCE_LENGTH:
-                            motion_writer.writerow([active_motion_sign, *np.array(current_sequence).flatten()])
-                            motion_file.flush()
-                            motion_sequence_count += 1
-                            current_sequence = []
+                    if len(current_sequence) >= SEQUENCE_LENGTH:
+                        motion_writer.writerow([active_motion_sign, *np.array(current_sequence).flatten()])
+                        motion_file.flush()
+                        motion_sequence_count += 1
+                        current_sequence = []
 
-                            if motion_sequence_count >= SEQUENCE_PER_SIGN:
-                                print(f"Finished collecting {active_motion_sign}")
-                                active_motion_sign = None
-                                motion_sequence_count = 0
-                                recording_sequence = False
+                        if motion_sequence_count >= SEQUENCES_PER_SIGN:
+                            print(f"Finished collection '{active_motion_sign}'")
+                            active_motion_sign = None
+                            motion_sequence_count = 0
+                            recording_sequence = False
 
-                            if motion_sequence_count >= SEQUENCES_PER_SIGN:
-                                print(f"Finished collection '{active_motion_sign}'")
-                                active_motion_sign = None
-                                motion_sequence_count = 0
+            #this sections should be for the instructions on the user interface
+            cv2.putText(
+                frame,
+                "Static signs: press A-Y or 0-9 (except J and Z) to collect samples",
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                2
+            )
 
-                #this sections should be for the instructions on the user interface
-                cv2.putText(
-                    frame,
-                    "Static signs: press A-Y or 0-9 (except J and Z) to collect samples",
-                    (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (255, 255, 255),
-                    2
+            #adding motion signs instructions here
+            cv2.putText(
+                frame, "Motion signs: press J or Z, the SPACE per repetition to collect samples", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2
+            )
+        
+            cv2.putText(
+                frame,
+                "Press Q to quit",
+                (10, 80),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                2
+            )
+
+            if active_static_sign:
+                message = (
+                    f"Collecting {active_static_sign}: "
+                    f"{static_sample_count}/{SAMPLES_PER_SIGN}"
                 )
+                color = (0, 255, 0)
+            elif active_motion_sign:
+                status = "Recording" if recording_sequence else "Waiting for SPACE"
+                message = (
+                    f"Collecting '{active_motion_sign}': "
+                    f"{motion_sequence_count}/{SEQUENCES_PER_SIGN} "
+                    f"sequences ({status})"
+            )
+                color = (0, 255, 255)
 
-                #adding motion signs instructions here
-                cv2.putText(
-                    frame, "Motion signs: press J or Z, the SPACE per repetition to collect samples", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2
-                )
-            
-                cv2.putText(
-                    frame,
-                    "Press Q to quit",
-                    (10, 80),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (255, 255, 255),
-                    2
-                )
+            else:
+                message = "Waiting for a sign selection..."
+                color = (255, 255, 0)
 
-                if active_static_sign:
-                    message = (
-                        f"Collecting {active_static_sign}: "
-                        f"{static_sample_count}/{SAMPLES_PER_SIGN}"
+            cv2.putText(
+                frame,
+                message,
+                (10, 115),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                color,
+                2
+            )
+
+            cv2.imshow("ASL Data Collection", frame)
+
+            key = cv2.waitKey(1) & 0xFF
+
+            if key == ord("q"):
+                break
+
+            if key != 255:
+                selected = chr(key).upper() if key < 128 else ""
+
+                no_active_sign = (active_static_sign is None and active_motion_sign is None)
+
+                if selected in STATIC_LETTERS and no_active_sign:
+                    active_static_sign = selected
+                    static_sample_count = 0
+                    print(f"Collecting static sign {selected}...")
+
+                elif selected in MOTION_SIGNS and no_active_sign:
+                    active_motion_sign = selected
+                    motion_sequence_count = 0
+                    current_sequence = []
+                    recording_sequence = False
+                    print(f"Collecting motion sign '{selected}'..."
+                            f"Press SPACE to record each repetition."
                     )
-                    color = (0, 255, 0)
-                elif active_motion_sign:
-                    status = "Recording" if recording_sequence else "Waiting for SPACE"
-                    message = (
-                        f"Collecting '{active_motion_sign}': "
-                        f"{motion_sequence_count}/{SEQUENCES_PER_SIGN} "
-                        f"sequences ({status})"
-                )
-                    color = (0, 255, 255)
 
-                else:
-                    message = "Waiting for a sign selection..."
-                    color = (255, 255, 0)
-
-                cv2.putText(
-                    frame,
-                    message,
-                    (10, 115),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7,
-                    color,
-                    2
-                )
-
-                cv2.imshow("ASL Data Collection", frame)
-
-                key = cv2.waitKey(1) & 0xFF
-
-                if key == ord("q"):
-                    break
-
-                if key != 255:
-                    selected = chr(key).upper() if key < 128 else ""
-
-                    no_active_sign = (active_static_sign is None and active_motion_sign is None)
-
-                    if selected in STATIC_LETTERS and no_active_sign:
-                        active_static_sign = selected
-                        static_sample_count = 0
-                        print(f"Collecting static sign {selected}...")
-
-                    elif selected in MOTION_SIGNS and no_active_sign:
-                        active_motion_sign = selected
-                        motion_sequence_count = 0
-                        current_sequence = []
-                        recording_sequence = False
-                        print(f"Collecting motion sign '{selected}'..."
-                              f"Press SPACE to record each repetition."
-                        )
-
-                    elif (
-                        key == ord(" ") and active_motion_sign and not recording_sequence
-                    ):
-                        current_sequence = []
-                        recording_sequence = True
-                        print(f"Recording sequence for " f" '{active_motion_sign}'...")
+                elif (
+                    key == ord(" ") and active_motion_sign and not recording_sequence
+                ):
+                    current_sequence = []
+                    recording_sequence = True
+                    print(f"Recording sequence for " f" '{active_motion_sign}'...")
 finally:
     camera.release()
     cv2.destroyAllWindows()
