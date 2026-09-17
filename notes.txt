@@ -5,3 +5,7 @@ train_model.py
     Paths: Paths established at the top of the program.
     - joblib: python library for saving and loading python objects
               helps handle large numpy arrays / matrices (what we need i found out about it on google)
+
+    -sklearn.ensemble / RandomForestClassifer: imports the classifier algorithms needed for training the train_model    
+    -os.makedir("models",exist_ok=True): Creates the models in the folder if its missing
+    

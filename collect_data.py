@@ -9,10 +9,18 @@ import numpy as np
 
 MODEL_PATH = "models/hand_landmarker.task"
 DATA_PATH = "data/landmarks.csv"
-MOTION_DATA_PATH = "data/motion_landmarks.csv"
+MOTION_DATA_PATH = "data/motion_landmarks.csv" #added it for J and Z (only motion signs) 
 
-LETTERS = ["A", "B", "C", "D", "E"]
+#Static signs are everything)
+STATIC_LETTERS = [c for c in "ABCDEFGHIKLMNOPQRSTUVWX"]  
+DIGITS = [str(d) for d in range(10)]
+STATIC_SIGNS = STATIC_LETTERS + DIGITS
 SAMPLES_PER_LETTER = 200
+
+#motion signs are J and Z (only motion signs) for the alphabet
+MOTION_SIGNS = ["J", "Z"]
+SEQUENCE_LENGTH = 20
+SEQUENCE_PER_SIGN = 100
 
 os.makedirs("data", exist_ok=True)
 
@@ -43,6 +51,30 @@ def normalize_landmarks(landmarks, hand_name):
 
     return coordinates.flatten()
 
+def static_header():
+    header = ["label"]
+
+    for landmark_number in range(21):
+        header.extend([
+            f"x{landmark_number}",
+            f"y{landmark_number}",
+            f"z{landmark_number}"
+        ])
+
+    return header
+
+def motion_header():
+    header =["label"]
+
+    for frame_number in range(SEQUENCE_LENGTH):
+        for landmark_number in range(21):
+            header.extend([
+                f"frame{frame_number}_x{landmark_number}",
+                f"frame{frame_number}_y{landmark_number}",
+                f"frame{frame_number}_z{landmark_number}",
+            ])
+
+    return header
 
 options = HandLandmarkerOptions(
     base_options=BaseOptions(model_asset_path=MODEL_PATH),
@@ -53,7 +85,9 @@ options = HandLandmarkerOptions(
     min_tracking_confidence=0.5
 )
 
-file_exists = os.path.exists(DATA_PATH) and os.path.getsize(DATA_PATH) > 0
+#needed to add motion file for other letters (j and z)
+static_file_exists = os.path.exists(DATA_PATH) and os.path.getsize(DATA_PATH) > 0
+motion_file_exists = os.path.exists(MOTION_DATA_PATH) and os.path.getsize(MOTION_DATA_PATH) > 0
 
 camera = cv2.VideoCapture(0)
 
@@ -61,55 +95,55 @@ if not camera.isOpened():
     print("Error: Could not open webcam.")
     raise SystemExit
 
+#static collection state
 active_letter = None
 sample_count = 0
 frame_count = 0
+
+#motion collection state 
+
+active_motion_sign = None
+motion_sequence_count = 0
+current_sequence = []
+recording_sequence = False
+
 start_time = time.perf_counter()
 last_timestamp = -1
 
+#once again needed to add both motion and static
+static_file = open(STATIC_DATA_PATH, "a", newline="")
+motion_file = open(MOTION_DATA_PATH, "a", newline="")
+
 try:
-    with open(DATA_PATH, "a", newline="") as data_file:
-        writer = csv.writer(data_file)
+    static_writer = csv.writer(static_file)
+    motion_writer = csv.writer(motion_file)
 
-        if not file_exists:
-            header = ["label"]
+    if not static_file_exists:
+        static_writer.writerow(static_header())
 
-            for landmark_number in range(21):
-                header.extend([
-                    f"x{landmark_number}",
-                    f"y{landmark_number}",
-                    f"z{landmark_number}"
-                ])
+    if not motion_file_exists:
+        motion_writer.writerow(motion_header())
 
-            writer.writerow(header)
+    with HandLandmarker.create_from_options(options) as landmarker:
+        while True:
+            success, frame = camera.read()
 
-        with HandLandmarker.create_from_options(options) as landmarker:
-            while True:
-                success, frame = camera.read()
+            if not success:
+                print("Error: Could not read webcam frame!")
+                break
 
-                if not success:
-                    break
+            frame = cv2.flip(frame, 1)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-                frame = cv2.flip(frame, 1)
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
 
-                mp_image = mp.Image(
-                    image_format=mp.ImageFormat.SRGB,
-                    data=rgb_frame
-                )
+            timestamp = int((time.perf_counter() - start_time) * 1000)
+            timestamp = max(timestamp, last_timestamp + 1)
+            last_timestamp = timestamp
 
-                timestamp = int(
-                    (time.perf_counter() - start_time) * 1000
-                )
-                timestamp = max(timestamp, last_timestamp + 1)
-                last_timestamp = timestamp
+            result = landmarker.detect_for_video(mp_image, timestamp)
 
-                result = landmarker.detect_for_video(
-                    mp_image,
-                    timestamp
-                )
-
-                frame_count += 1
+            frame_count += 1
 
                 if result.hand_landmarks:
                     landmarks = result.hand_landmarks[0]
@@ -123,60 +157,92 @@ try:
                         y = int(point.y * height)
                         cv2.circle(frame, (x, y), 5, (0, 255, 0), -1)
 
-                    # Save one sample every two frames
+                    features = normalize_landmarks(landmarks, hand_name)
+
+                    #static sign collection: making it one sample for every two frame to avoid duplicates and to give the user time to change the sign
+
                     if active_letter and frame_count % 2 == 0:
-                        features = normalize_landmarks(
-                            landmarks,
-                            hand_name
-                        )
+                        static_writer.writerow([active_static_sign, *features])
+                        static_file.flush()
+                        static_sample_count += 1
 
-                        writer.writerow([active_letter, *features])
-                        data_file.flush()
-                        sample_count += 1
+                        if static_sample_count >= SAMPLES_PER_SIGN:
+                            print(f"Finished collecting {active_static_sign}")
+                            active_static_sign = None
+                            static_sample_count = 0
 
-                        if sample_count >= SAMPLES_PER_LETTER:
-                            print(
-                                f"Finished collecting {active_letter}"
-                            )
-                            active_letter = None
-                            sample_count = 0
+                    #motion sign collection: making it one sample for every two frame to avoid duplicates and to give the user time to change the sign
+                    if recording_sequence:
+                        current_sequence.append(features)
 
+                        if len(current_sequence) >= SEQUENCE_LENGTH:
+                            motion_writer.writerow([active_motion_sign, *np.array(current_sequence).flatten()])
+                            motion_file.flush()
+                            motion_sequence_count += 1
+                            current_sequence = []
+
+                            if motion_sequence_count >= SEQUENCE_PER_SIGN:
+                                print(f"Finished collecting {active_motion_sign}")
+                                active_motion_sign = None
+                                motion_sequence_count = 0
+                                recording_sequence = False
+
+                            if motion_sequence_count >= SEQUENCES_PER_SIGN:
+                                print(f"Finished collection '{active_motion_sign}'")
+                                active_motion_sign = None
+                                motion_sequence_count = 0
+
+                #this sections should be for the instructions on the user interface
                 cv2.putText(
                     frame,
-                    "Press A, B, C, D, or E to collect",
+                    "Static signs: press A-Y or 0-9 (except J and Z) to collect samples",
                     (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
+                    0.6,
                     (255, 255, 255),
                     2
                 )
 
+                #adding motion signs instructions here
+                cv2.putText(
+                    frame, "Motion signs: press J or Z, the SPACE per repetition to collect samples", (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2
+                )
+            
                 cv2.putText(
                     frame,
                     "Press Q to quit",
-                    (10, 60),
+                    (10, 80),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.65,
+                    0.6,
                     (255, 255, 255),
                     2
                 )
 
-                if active_letter:
+                if active_static_sign:
                     message = (
-                        f"Collecting {active_letter}: "
-                        f"{sample_count}/{SAMPLES_PER_LETTER}"
+                        f"Collecting {active_static_sign}: "
+                        f"{static_sample_count}/{SAMPLES_PER_SIGN}"
                     )
                     color = (0, 255, 0)
-                else:
-                    message = "Waiting for a letter selection"
+                elif active_motion_sign:
+                    status = "Recording" if recording_sequence else "Waiting for SPACE"
+                    message = (
+                        f"Collecting '{active_motion_sign}': "
+                        f"{motion_sequence_count}/{SEQUENCES_PER_SIGN} "
+                        f"sequences ({status})"
+                )
                     color = (0, 255, 255)
+
+                else:
+                    message = "Waiting for a sign selection..."
+                    color = (255, 255, 0)
 
                 cv2.putText(
                     frame,
                     message,
-                    (10, 100),
+                    (10, 115),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    0.75,
+                    0.7,
                     color,
                     2
                 )
@@ -189,13 +255,32 @@ try:
                     break
 
                 if key != 255:
-                    selected = chr(key).upper()
+                    selected = chr(key).upper() if key < 128 else ""
 
-                    if selected in LETTERS and active_letter is None:
-                        active_letter = selected
-                        sample_count = 0
-                        print(f"Collecting letter {selected}...")
+                    no_active_sign = (active_static_sign is None and active_motion_sign is None)
 
+                    if selected in STATIC_LETTERS and no_active_sign:
+                        active_static_sign = selected
+                        static_sample_count = 0
+                        print(f"Collecting static sign {selected}...")
+
+                    elif selected in MOTION_SIGNS and no active_sign:
+                        active_motion_sign = selected
+                        motion_sequence_count = 0
+                        current_sequence = []
+                        recording_sequence = False
+                        print(f"Collecting motion sign '{selected}'..."
+                              f"Press SPACE to record each repetition."
+                        )
+
+                    elif (
+                        key == ord(" ") and active_motion_sign and not recording_sequence
+                    ):
+                        current_sequence = []
+                        recording_sequence = True
+                        print(f"Recording sequence for " f" '{active_motion_sign}'...")
 finally:
     camera.release()
     cv2.destroyAllWindows()
+    static_file.close()
+    motion_file.close()
