@@ -246,7 +246,7 @@ try:
 
             key = cv2.waitKey(1) & 0xFF
 
-            if key == ord("q"):
+            if key == 27:  # ESC key exits data collection; Q remains available as a sign
                 break
 
             if key != 255:
