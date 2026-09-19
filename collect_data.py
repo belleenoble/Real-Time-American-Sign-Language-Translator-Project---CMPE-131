@@ -90,6 +90,8 @@ static_file_exists = os.path.exists(STATIC_DATA_PATH) and os.path.getsize(STATIC
 motion_file_exists = os.path.exists(MOTION_DATA_PATH) and os.path.getsize(MOTION_DATA_PATH) > 0
 
 camera = cv2.VideoCapture(0)
+camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
 if not camera.isOpened():
     print("Error: Could not open webcam.")

@@ -134,7 +134,13 @@ try:
                     )
 
                     if is_stable and predicted_sign != last_committed_sign:
-                        committed_word += predicted_sign
+                        if predicted_sign == "SPACE":
+                            committed_word += " "
+                        elif predicted_sign == "DEL":
+                            committed_word = committed_word[:-1]
+                        else:
+                            committed_word += predicted_sign
+
                         last_committed_sign = predicted_sign
                 else:
                     recent_predictions = []
