@@ -33,4 +33,6 @@ convert_images.py: use this if you want to train using online data (image files)
 	
 	This is for static letters only.
 
-    
+	It is not necessary to push the dataset folder as they are usually too large.
+
+	    
