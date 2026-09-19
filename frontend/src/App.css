@@ -1,0 +1,128 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: #f4f7fb;
+  font-family: Arial, sans-serif;
+  color: #1f2937;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+header {
+  padding: 24px;
+  text-align: center;
+  background-color: #1d4ed8;
+  color: white;
+}
+
+header h1 {
+  margin: 0 0 8px;
+}
+
+header p {
+  margin: 0;
+}
+
+main {
+  display: flex;
+  gap: 24px;
+  max-width: 1100px;
+  margin: 40px auto;
+  padding: 0 24px;
+}
+
+.camera-section,
+.results-section {
+  flex: 1;
+  padding: 24px;
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.camera-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 360px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  border-radius: 8px;
+  background-color: #111827;
+  color: white;
+}
+
+.camera-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+
+  /* Makes the camera behave like a mirror */
+  transform: scaleX(-1);
+}
+
+.hidden {
+  display: none;
+}
+
+button {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  background-color: #2563eb;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #1d4ed8;
+}
+
+.status {
+  color: #6b7280;
+}
+
+.result-card {
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+}
+
+.result-card h2 {
+  margin-top: 0;
+  font-size: 18px;
+}
+
+.detected-letter {
+  margin: 0;
+  font-size: 64px;
+  font-weight: bold;
+}
+
+.current-word {
+  min-height: 36px;
+  font-size: 30px;
+  font-weight: bold;
+}
+
+.clear-button {
+  background-color: #dc2626;
+}
+
+.clear-button:hover {
+  background-color: #b91c1c;
+}
+
+@media (max-width: 750px) {
+  main {
+    flex-direction: column;
+  }
+}
