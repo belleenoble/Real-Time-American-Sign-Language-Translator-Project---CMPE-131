@@ -169,24 +169,12 @@ try:
                         and len(set(recent_static_predictions)) == 1
                     )
 
-<<<<<<< HEAD
                     if is_static_stable and static_sign != last_committed_sign:
                         current_word += static_sign
                         last_committed_sign = static_sign
                         recent_static_predictions = []
                         motion_frame_buffer.clear() #clear motion buffer when a static sign is committed
                         recent_motion_predictions = []
-=======
-                    if is_stable and predicted_sign != last_committed_sign:
-                        if predicted_sign == "SPACE":
-                            committed_word += " "
-                        elif predicted_sign == "DEL":
-                            committed_word = committed_word[:-1]
-                        else:
-                            committed_word += predicted_sign
-
-                        last_committed_sign = predicted_sign
->>>>>>> 0b90b42685e7bed7e7a255e6aa98f13e5e575758
                 else:
                     recent_static_predictions = []
 
