@@ -10,6 +10,7 @@ function App() {
 
   const [detectedLetter, setDetectedLetter] = useState("");
   const [currentWord, setCurrentWord] = useState("");
+  const [confidence, setConfidence] = useState(0);
 
   async function startCamera() {
     console.log("Start Camera was pressed");
@@ -59,6 +60,89 @@ function App() {
   }
 
   useEffect(() => {
+    if (!cameraOn) {
+      return;
+    }
+
+    let requestInProgress = false;
+
+    async function sendFrameForPrediction() {
+      const video = videoRef.current;
+
+      if (
+        requestInProgress ||
+        !video ||
+        video.readyState < 2 ||
+        video.videoWidth === 0
+      ) {
+        return;
+      }
+
+      requestInProgress = true;
+
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        const context = canvas.getContext("2d");
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const imageBlob = await new Promise((resolve) => {
+          canvas.toBlob(resolve, "image/jpeg", 0.8);
+        });
+
+        if (!imageBlob) {
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("image", imageBlob, "camera-frame.jpg");
+
+        const response = await fetch("http://127.0.0.1:5000/predict", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Prediction failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        setConfidence(data.confidence || 0);
+
+        if (!data.handDetected) {
+          setDetectedLetter("");
+          setStatus("Position your hand in the camera view");
+        } else if (data.recognized) {
+          setDetectedLetter(data.letter);
+          setStatus("Sign recognized");
+        } else {
+          setDetectedLetter("");
+          setStatus("Hold the sign steady");
+        }
+      } catch (error) {
+        console.error("Prediction error:", error);
+        setStatus("Recognition service unavailable");
+      } finally {
+        requestInProgress = false;
+      }
+    }
+
+    sendFrameForPrediction();
+
+    const predictionInterval = setInterval(
+      sendFrameForPrediction,
+      500
+    );
+
+    return () => {
+      clearInterval(predictionInterval);
+    };
+  }, [cameraOn]);
+
+  useEffect(() => {
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => {
@@ -71,6 +155,7 @@ function App() {
   function clearWord() {
     setDetectedLetter("");
     setCurrentWord("");
+    setConfidence(0);
   }
 
   return (
@@ -110,9 +195,12 @@ function App() {
           <div className="confidence">
             <p>{status}</p>
             <div className="confidence-track">
-              <div className="confidence-fill" />
+              <div
+                className="confidence-fill"
+                style={{ width: `${Math.round(confidence * 100)}%` }}
+              />
             </div>
-            <span>0% confidence</span>
+            <span>{Math.round(confidence * 100)}% confidence</span>
           </div>
         </div>
 
