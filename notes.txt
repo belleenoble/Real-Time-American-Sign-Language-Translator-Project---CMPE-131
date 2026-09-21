@@ -15,4 +15,24 @@ As of 9/16/26 we can officially train the model with the new collect_data.py and
  - then go to recognize, and put `python train_model.py`
 
  (an error that needs to be fixed is the fact that you cant train "q" bc its the quit button. maybe if someone can change to esc)
-    
+
+P/S: the Q error is fixed.
+
+
+convert_images.py: use this if you want to train using online data (image files) instead of with your own hands
+
+	create a folder "dataset" and put the images dataset folder in there.
+
+	put this in the workspace terminal:
+
+	python convert_images.py "dataset\[put your dataset folder name here]" --workers 8 --force 
+
+	then enter, the worker command is to speed up the process, the maximum is 8 and can be lower if computer can't handle it.
+	
+	After it done, use train_model.py
+	
+	This is for static letters only.
+
+	It is not necessary to push the dataset folder as they are usually too large.
+
+	    
