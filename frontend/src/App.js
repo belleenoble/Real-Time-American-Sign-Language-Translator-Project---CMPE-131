@@ -8,6 +8,9 @@ function App() {
   const [cameraOn, setCameraOn] = useState(false);
   const [status, setStatus] = useState("Waiting to begin");
 
+  const [detectedLetter, setDetectedLetter] = useState("");
+  const [currentWord, setCurrentWord] = useState("");
+
   async function startCamera() {
     console.log("Start Camera was pressed");
     
@@ -26,7 +29,7 @@ function App() {
       setStatus("Camera active");
     } catch (error) {
       console.error("Camera error:", error);
-      setStatus('Camera error: ${error.name}');
+      setStatus(`Camera error: ${error.name}`);
     }
   }
 
@@ -65,48 +68,134 @@ function App() {
     };
   }, []);
 
+  function clearWord() {
+    setDetectedLetter("");
+    setCurrentWord("");
+  }
+
   return (
-    <div className="app">
-      <header>
-        <h1>ASL Recognition System</h1>
-        <p>Translate ASL signs into English in real time</p>
-      </header>
+    <div className="app-shell">
+      <aside className="sidebar camera-sidebar">
+        <div className="brand">
+          <p className="eyebrow asl-text">ASL BRIDGE</p>
+          <h1>Sign Language Interpreter</h1>
 
-      <main>
-        <section className="camera-section">
-          <div className="camera-container">
-            <video
-              ref={videoRef}
-              className={cameraOn ? "camera-feed" : "camera-feed hidden"}
-              autoPlay
-              playsInline
-              muted
-            />
+          <div className="user-key">
+            <span><i className="dot asl-dot" /> ASL USER</span>
+            <span><i className="dot hearing-dot" /> HEARING USER</span>
+          </div>
+        </div>
 
-            {!cameraOn && <p>Camera feed will appear here</p>}
+        <div className="camera-container">
+          <video
+            ref={videoRef}
+            className={cameraOn ? "camera-feed" : "camera-feed hidden"}
+            autoPlay
+            playsInline
+            muted
+          />
+
+          {!cameraOn && (
+            <div className="camera-placeholder">
+              <p>Camera feed will appear here</p>
+            </div>
+          )}
+        </div>
+
+        <div className="camera-status">
+          <div className="letter-preview">
+            {detectedLetter || "—"}
           </div>
 
-          <button onClick={toggleCamera}>
-            {cameraOn ? "Stop Camera" : "Start Camera"}
-          </button>
-        </section>
-
-        <section className="results-section">
-          <p className="status">Status: {status}</p>
-
-          <div className="result-card">
-            <h2>Detected Letter</h2>
-            <p className="detected-letter">—</p>
+          <div className="confidence">
+            <p>{status}</p>
+            <div className="confidence-track">
+              <div className="confidence-fill" />
+            </div>
+            <span>0% confidence</span>
           </div>
+        </div>
 
-          <div className="result-card">
-            <h2>Current Word</h2>
-            <p className="current-word">—</p>
+        <div className="composer">
+          <p className="eyebrow asl-text">ASL — COMPOSING</p>
+          <p className="current-word">
+            {currentWord || "Sign letters to build a message..."}
+          </p>
+
+          <div className="button-row">
+            <button className="primary-button" disabled>
+              Send Message
+            </button>
+
+            <button className="clear-button" onClick={clearWord}>
+              Clear
+            </button>
           </div>
+        </div>
 
-          <button className="clear-button">Clear Word</button>
-        </section>
+        <button className="camera-button" onClick={toggleCamera}>
+          {cameraOn ? "Stop Camera" : "Start Camera"}
+        </button>
+      </aside>
+
+      <main className="conversation-panel">
+        <div className="conversation-header">
+          <span className="dot hearing-dot" />
+          <span>TRANSLATION OUTPUT</span>
+        </div>
+
+        <div className="conversation-area">
+          <div className="welcome-message">
+            <p className="message-author">SYSTEM</p>
+            <p>
+              Start the camera and sign your message. Recognized letters and
+              words will appear here.
+            </p>
+          </div>
+        </div>
+
+        <div className="output-area">
+          <p className="eyebrow hearing-text">CURRENT TRANSLATION</p>
+          <div className="translation-output">
+            {currentWord || "Waiting for a translated message..."}
+          </div>
+        </div>
       </main>
+
+      <aside className="sidebar guide-sidebar">
+        <section>
+          <p className="eyebrow asl-text">ASL USER</p>
+
+          <ol className="instructions">
+            <li>Position your hand inside the camera view.</li>
+            <li>Hold each sign until it is recognized.</li>
+            <li>Move your hand away before repeating a letter.</li>
+            <li>Review the translated word in the center panel.</li>
+          </ol>
+        </section>
+
+        <section className="guide-section">
+          <p className="eyebrow hearing-text">SYSTEM STATUS</p>
+
+          <div className="status-box">
+            <span className={cameraOn ? "dot asl-dot" : "dot offline-dot"} />
+            {cameraOn ? "Camera active" : "Camera offline"}
+          </div>
+
+          <div className="status-box">
+            <span className="dot offline-dot" />
+            Recognition model not connected
+          </div>
+        </section>
+
+        <section className="guide-section">
+          <p className="eyebrow">SUPPORTED INPUT</p>
+          <p className="guide-copy">
+            Static alphabet signs are being developed first. Motion-based
+            letters J and Z will be added afterward.
+          </p>
+        </section>
+      </aside>
     </div>
   );
 }
