@@ -15,6 +15,19 @@ As of 9/16/26 we can officially train the model with the new collect_data.py and
  - then go to recognize, and put `python train_model.py`
 
  (an error that needs to be fixed is the fact that you cant train "q" bc its the quit button. maybe if someone can change to esc)
+<<<<<<< HEAD
+    
+TO CHECK TRAINING LOG: 
+python -c "import pandas as pd; df = pd.read_csv('data/landmarks.csv'); print(df['label'].value_counts().sort_index())" 
+or
+python -c "import pandas as pd; df = pd.read_csv('data/motion_landmarks.csv'); print(df['label'].value_counts().sort_index())"
+
+to push the tained joblib data: (venv active)
+git pull
+git add models/motion_sign_classifier.joblib (or static)
+git commit -m "comment"
+git push
+=======
 
 P/S: the Q error is fixed.
 
@@ -36,3 +49,4 @@ convert_images.py: use this if you want to train using online data (image files)
 	It is not necessary to push the dataset folder as they are usually too large.
 
 	    
+>>>>>>> 0b90b42685e7bed7e7a255e6aa98f13e5e575758

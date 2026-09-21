@@ -207,7 +207,7 @@ try:
         
             cv2.putText(
                 frame,
-                "Press Q to quit",
+                "Press ESC to quit",
                 (10, 80),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
