@@ -16,10 +16,7 @@ MOTION_MODEL_PATH = "models/motion_sign_classifier.joblib"
 # Anything below this is treated as "unrecognized" (User Story 2).
 CONFIDENCE_THRESHOLD = 0.6
 
-<<<<<<< HEAD
-=======
 MOTION_CONFIDENCE_THRESHOLD = 0.9
->>>>>>> e72eee194c568a6fae26e066d5602c92a33e4cc5
 #for static signs
 # how many consecutive frames must agree before a letter is committed
 # to the word. Higher = more stable but slower to react.
@@ -30,13 +27,10 @@ STABILITY_FRAMES = 25
 MOTION_SEQUENCE_LENGTH = 20 
 
 #motion signs get fewer, noiser windows than static so it needs to be more stable
-<<<<<<< HEAD
 MOTION_STABILITY_FRAMES = 5
-=======
-MOTION_STABILITY_FRAMES = 8
 
+#how often (in frames) to run the motion model prediction
 MOTION_CHECK_INTERVAL = 4
->>>>>>> e72eee194c568a6fae26e066d5602c92a33e4cc5
 
 WORD_BREAK_FRAMES = 30  # how many frames of no hand before the current word is reset
 
@@ -106,10 +100,7 @@ recent_motion_predictions =[]
 
 current_word = ""
 sentence =""
-<<<<<<< HEAD
-=======
 frame_count = 0
->>>>>>> e72eee194c568a6fae26e066d5602c92a33e4cc5
 last_committed_sign = None
 frames_since_hand_seen = 0
 word_break_triggered =False
@@ -143,10 +134,7 @@ try:
 
             result = landmarker.detect_for_video(mp_image, timestamp)
 
-<<<<<<< HEAD
-=======
             frame_count += 1
->>>>>>> e72eee194c568a6fae26e066d5602c92a33e4cc5
             static_sign = None
             confidence = 0.0
             motion_sign = None
@@ -195,24 +183,16 @@ try:
                 if motion_model is not None:
                     motion_frame_buffer.append(features)
 
-<<<<<<< HEAD
-                    if len(motion_frame_buffer) >= MOTION_SEQUENCE_LENGTH:
-=======
                     if (len(motion_frame_buffer) >= MOTION_SEQUENCE_LENGTH 
                     and frame_count % MOTION_CHECK_INTERVAL == 0 
                     ):
->>>>>>> e72eee194c568a6fae26e066d5602c92a33e4cc5
                         flat_seqeunce = np.concatenate(motion_frame_buffer)
                         motion_probabilities = motion_model.predict_proba([flat_seqeunce])[0]
                         best_motion_index = np.argmax(motion_probabilities)
                         motion_sign = motion_model.classes_[best_motion_index]
                         motion_confidence = motion_probabilities[best_motion_index]
 
-<<<<<<< HEAD
-                        if motion_confidence >= CONFIDENCE_THRESHOLD:
-=======
                         if motion_confidence >= MOTION_CONFIDENCE_THRESHOLD:
->>>>>>> e72eee194c568a6fae26e066d5602c92a33e4cc5
                             recent_motion_predictions.append(motion_sign)
                             recent_motion_predictions = (recent_motion_predictions[-MOTION_STABILITY_FRAMES:])
 
@@ -284,22 +264,14 @@ try:
 
             if motion_model is None:
                 motion_status = "No motion model loaded"
-<<<<<<< HEAD
                 motion_color = (128, 128, 128)
-=======
-                motion_color = (0, 255, 0) if motion_confidence >= CONFIDENCE_THRESHOLD else (0,0,255)
->>>>>>> e72eee194c568a6fae26e066d5602c92a33e4cc5
 
             elif motion_sign is not None:
                 motion_status = (
                     f"Motion: {motion_sign} "
                     f"({motion_confidence * 100:.0f}% confidence)"
                 )
-<<<<<<< HEAD
                 motion_color = (0, 255, 0) if motion_confidence >= CONFIDENCE_THRESHOLD else (0, 0, 255)
-=======
-                motion_color = (128, 128, 128) if motion_confidence >= CONFIDENCE_THRESHOLD else (0, 0, 255)
->>>>>>> e72eee194c568a6fae26e066d5602c92a33e4cc5
             else:
                 buffered = len(motion_frame_buffer)
                 motion_status = (
