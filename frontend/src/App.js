@@ -5,11 +5,18 @@ function App() {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
+  const predictionInProgressRef = useRef(false);
+  const lastAcceptedLetterRef = useRef("");
+
+  const [modelConnected, setModelConnected] = useState(false);
+
   const [cameraOn, setCameraOn] = useState(false);
   const [status, setStatus] = useState("Waiting to begin");
 
   const [detectedLetter, setDetectedLetter] = useState("");
   const [currentWord, setCurrentWord] = useState("");
+
+  const [confidence, setConfidence] = useState(0);
 
   async function startCamera() {
     console.log("Start Camera was pressed");
@@ -68,9 +75,99 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!cameraOn) {
+      return;
+    }
+
+    async function requestPrediction() {
+      const video = videoRef.current;
+
+      if (
+        !video ||
+        video.readyState < 2 ||
+        predictionInProgressRef.current
+      ) {
+        return;
+      }
+
+      predictionInProgressRef.current = true;
+
+      try {
+        const canvas = document.createElement("canvas");
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        const context = canvas.getContext("2d");
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const imageBlob = await new Promise((resolve) => {
+          canvas.toBlob(resolve, "image/jpeg", 0.8);
+        });
+
+        if (!imageBlob) {
+          throw new Error("Unable to capture camera frame");
+        }
+
+        const formData = new FormData();
+        formData.append("image", imageBlob, "camera-frame.jpg");
+
+        const response = await fetch("http://127.0.0.1:5001/predict", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Prediction request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        setModelConnected(true);
+        setConfidence(data.confidence || 0);
+
+        if (!data.handDetected) {
+          setDetectedLetter("");
+          lastAcceptedLetterRef.current = "";
+          setStatus("Position your hand in view");
+          return;
+        }
+
+        if (!data.recognized || !data.letter) {
+          setDetectedLetter("");
+          setStatus("Hold the sign steady");
+          return;
+        }
+
+        setDetectedLetter(data.letter);
+        setStatus("Sign recognized");
+
+        if (data.letter !== lastAcceptedLetterRef.current) {
+          setCurrentWord((previousWord) => previousWord + data.letter);
+          lastAcceptedLetterRef.current = data.letter;
+        }
+      } catch (error) {
+        console.error("Prediction error:", error);
+        setModelConnected(false);
+        setStatus("Recognition service unavailable");
+      } finally {
+        predictionInProgressRef.current = false;
+      }
+    }
+
+    const predictionInterval = setInterval(requestPrediction, 500);
+
+    return () => {
+      clearInterval(predictionInterval);
+    };
+  }, [cameraOn]);
+
   function clearWord() {
     setDetectedLetter("");
     setCurrentWord("");
+    setConfidence(0);
+    lastAcceptedLetterRef.current = "";
   }
 
   return (
@@ -110,9 +207,12 @@ function App() {
           <div className="confidence">
             <p>{status}</p>
             <div className="confidence-track">
-              <div className="confidence-fill" />
+              <div
+                className="confidence-fill"
+                style={{ width: `${Math.round(confidence * 100)}%` }}
+              />
             </div>
-            <span>0% confidence</span>
+            <span>{Math.round(confidence * 100)}% confidence</span>
           </div>
         </div>
 
@@ -183,13 +283,16 @@ function App() {
           </div>
 
           <div className="status-box">
-            <span className="dot offline-dot" />
-            Recognition model not connected
+            <span className={modelConnected ? "dot asl-dot" : "dot offline-dot"} />
+            {modelConnected
+              ? "Recognition model connected"
+              : "Recognition model not connected"}
           </div>
         </section>
 
         <section className="guide-section">
           <p className="eyebrow">SUPPORTED INPUT</p>
+          
           <p className="guide-copy">
             Static alphabet signs are being developed first. Motion-based
             letters J and Z will be added afterward.
