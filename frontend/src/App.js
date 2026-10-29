@@ -2,21 +2,32 @@ import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 function App() {
+  // references for video and stream
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
+  // references for prediction state
   const predictionInProgressRef = useRef(false);
   const lastAcceptedLetterRef = useRef("");
+  const candidateLetterRef = useRef("");
+  const candidateCountRef = useRef(0);
+  const REQUIRED_STABLE_PREDICTIONS = 3;
 
+  // state variables
   const [modelConnected, setModelConnected] = useState(false);
-
   const [cameraOn, setCameraOn] = useState(false);
   const [status, setStatus] = useState("Waiting to begin");
 
+  // state for detected letter and current word
   const [detectedLetter, setDetectedLetter] = useState("");
   const [currentWord, setCurrentWord] = useState("");
+  const [sentMessages, setSentMessages] = useState([]);
 
+  // state for confidence level
   const [confidence, setConfidence] = useState(0);
+
+  // state for welcome message visibility
+  const [showWelcome, setShowWelcome] = useState(true);
 
   async function startCamera() {
     console.log("Start Camera was pressed");
@@ -55,6 +66,12 @@ function App() {
 
     setCameraOn(false);
     setStatus("Camera stopped");
+    setDetectedLetter("");
+    setConfidence(0);
+
+    lastAcceptedLetterRef.current = "";
+    candidateLetterRef.current = "";
+    candidateCountRef.current = 0;
   }
 
   function toggleCamera() {
@@ -131,16 +148,39 @@ function App() {
           setDetectedLetter("");
           lastAcceptedLetterRef.current = "";
           setStatus("Position your hand in view");
+
+          candidateLetterRef.current = "";
+          candidateCountRef.current = 0;
+
           return;
         }
 
         if (!data.recognized || !data.letter) {
           setDetectedLetter("");
           setStatus("Hold the sign steady");
+
+          candidateLetterRef.current = "";
+          candidateCountRef.current = 0;
+
           return;
         }
 
         setDetectedLetter(data.letter);
+
+        if (data.letter === candidateLetterRef.current) {
+          candidateCountRef.current += 1;
+        } else {
+          candidateLetterRef.current = data.letter;
+          candidateCountRef.current = 1;
+        }
+
+        if (candidateCountRef.current < REQUIRED_STABLE_PREDICTIONS) {
+          setStatus(
+            `Hold sign steady (${candidateCountRef.current}/${REQUIRED_STABLE_PREDICTIONS})`
+          );
+          return;
+        }
+
         setStatus("Sign recognized");
 
         if (data.letter !== lastAcceptedLetterRef.current) {
@@ -163,11 +203,148 @@ function App() {
     };
   }, [cameraOn]);
 
+  function addSpace() {
+    setCurrentWord((previous) => {
+      if (!previous || previous.endsWith(" ")) {
+        return previous;
+      }
+
+      return `${previous} `;
+    });
+
+    setDetectedLetter("");
+  }
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      const activeElement = document.activeElement;
+      const shouldIgnoreShortcut =
+        activeElement?.tagName === "INPUT" ||
+        activeElement?.tagName === "TEXTAREA" ||
+        activeElement?.tagName === "BUTTON" ||
+        activeElement?.isContentEditable;
+
+      if (shouldIgnoreShortcut) {
+        return;
+      }
+
+      if (event.code === "Space") {
+        event.preventDefault();
+
+        setCurrentWord((previous) => {
+          if (!previous || previous.endsWith(" ")) {
+            return previous;
+          }
+
+          return `${previous} `;
+        });
+
+        setDetectedLetter("");
+      }
+
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        setCurrentWord((previous) => previous.slice(0, -1));
+        setDetectedLetter("");
+      }
+
+      if (event.key === "Escape") {
+        setCurrentWord("");
+        setDetectedLetter("");
+        setConfidence(0);
+
+        lastAcceptedLetterRef.current = "";
+        candidateLetterRef.current = "";
+        candidateCountRef.current = 0;
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  function backspace() {
+    setCurrentWord((previous) => previous.slice(0, -1));
+    setDetectedLetter("");
+  }
+
   function clearWord() {
     setDetectedLetter("");
     setCurrentWord("");
     setConfidence(0);
+
     lastAcceptedLetterRef.current = "";
+    candidateLetterRef.current = "";
+    candidateCountRef.current = 0;
+  }
+
+  if (showWelcome) {
+    return (
+      <div className="welcome-page">
+        <div className="welcome-content">
+          <p className="eyebrow asl-text">ASL BRIDGE</p>
+
+          <h1>Communication without barriers</h1>
+
+          <p className="welcome-description">
+            Translate supported American Sign Language letters into readable
+            English text using your camera.
+          </p>
+
+          <button
+            className="welcome-start-button"
+            onClick={() => setShowWelcome(false)}
+          >
+            Start Translating
+          </button>
+
+          <div className="welcome-steps">
+            <div>
+              <span>01</span>
+              <p>Allow camera access</p>
+            </div>
+
+            <div>
+              <span>02</span>
+              <p>Position your hand in view</p>
+            </div>
+
+            <div>
+              <span>03</span>
+              <p>Hold a sign to translate it</p>
+            </div>
+          </div>
+
+          <p className="welcome-note">
+            Camera access begins only after you choose Start Camera.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  function sendMessage() {
+    const message = currentWord.trim();
+
+    if (!message) {
+      return;
+    }
+
+    setSentMessages((previousMessages) => [
+      ...previousMessages,
+      message,
+    ]);
+
+    setCurrentWord("");
+    setDetectedLetter("");
+    setConfidence(0);
+    setStatus("Message sent");
+
+    candidateLetterRef.current = "";
+    candidateCountRef.current = 0;
   }
 
   return (
@@ -223,14 +400,38 @@ function App() {
           </p>
 
           <div className="button-row">
-            <button className="primary-button" disabled>
-              Send Message
+            <button
+              className="edit-button"
+              onClick={addSpace}
+              disabled={!currentWord || currentWord.endsWith(" ")}
+            >
+              Space
             </button>
 
-            <button className="clear-button" onClick={clearWord}>
+            <button
+              className="edit-button"
+              onClick={backspace}
+              disabled={!currentWord}
+            >
+              Backspace
+            </button>
+
+            <button
+              className="clear-button"
+              onClick={clearWord}
+              disabled={!currentWord}
+            >
               Clear
             </button>
           </div>
+
+          <button
+            className="primary-button"
+            onClick={sendMessage}
+            disabled={!currentWord.trim()}
+          >
+            Send Message
+          </button>
         </div>
 
         <button className="camera-button" onClick={toggleCamera}>
@@ -252,6 +453,13 @@ function App() {
               words will appear here.
             </p>
           </div>
+
+          {sentMessages.map((message, index) => (
+            <div className="sent-message" key={`${message}-${index}`}>
+              <p className="message-author">ASL USER</p>
+              <p>{message}</p>
+            </div>
+          ))}
         </div>
 
         <div className="output-area">
