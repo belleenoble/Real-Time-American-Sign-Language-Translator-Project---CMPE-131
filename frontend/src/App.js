@@ -2,32 +2,43 @@ import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 function App() {
-  // references for video and stream
+  // camera references
   const videoRef = useRef(null);
   const streamRef = useRef(null);
 
-  // references for prediction state
+  // prediction references
   const predictionInProgressRef = useRef(false);
   const lastAcceptedLetterRef = useRef("");
   const candidateLetterRef = useRef("");
   const candidateCountRef = useRef(0);
+
+  // speech-recognition reference
+  const recognitionRef = useRef(null);
+
+  // prediction configuration
   const REQUIRED_STABLE_PREDICTIONS = 3;
 
-  // state variables
+  // connection and camera state
   const [modelConnected, setModelConnected] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [status, setStatus] = useState("Waiting to begin");
 
-  // state for detected letter and current word
+  // translation and conversation state
   const [detectedLetter, setDetectedLetter] = useState("");
   const [currentWord, setCurrentWord] = useState("");
   const [sentMessages, setSentMessages] = useState([]);
 
-  // state for confidence level
+  // confidence state
   const [confidence, setConfidence] = useState(0);
 
-  // state for welcome message visibility
+  // welcome-page state
   const [showWelcome, setShowWelcome] = useState(true);
+
+  // speech-recognition state
+  const [isListening, setIsListening] = useState(false);
+  const [speechPreview, setSpeechPreview] = useState(
+    "Press Start Listening and begin speaking."
+  );
 
   async function startCamera() {
     console.log("Start Camera was pressed");
@@ -88,6 +99,14 @@ function App() {
         streamRef.current.getTracks().forEach((track) => {
           track.stop();
         });
+      }
+
+      if ("speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
       }
     };
   }, []);
@@ -326,6 +345,39 @@ function App() {
     );
   }
 
+  function speakText(text) {
+    if (
+      !("speechSynthesis" in window) ||
+      !("SpeechSynthesisUtterance" in window)
+    ) {
+      setStatus("Text-to-speech is not supported by this browser");
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const speech = new SpeechSynthesisUtterance(text);
+
+    speech.lang = "en-US";
+    speech.rate = 0.95;
+    speech.pitch = 1;
+    speech.volume = 1;
+
+    speech.onerror = (event) => {
+      if (
+        event.error === "canceled" ||
+        event.error === "interrupted"
+      ) {
+        return;
+      }
+      
+      console.error("Speech error:", event.error);
+      setStatus("Unable to speak message");
+    };
+
+    window.speechSynthesis.speak(speech);
+  }
+  
   function sendMessage() {
     const message = currentWord.trim();
 
@@ -335,8 +387,13 @@ function App() {
 
     setSentMessages((previousMessages) => [
       ...previousMessages,
-      message,
+      {
+        sender: "asl",
+        text: message,
+      }
     ]);
+
+    speakText(message);
 
     setCurrentWord("");
     setDetectedLetter("");
@@ -345,6 +402,90 @@ function App() {
 
     candidateLetterRef.current = "";
     candidateCountRef.current = 0;
+  }
+
+  function toggleSpeechRecognition() {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setSpeechPreview(
+        "Speech recognition is not supported by this browser."
+      );
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setSpeechPreview("Listening...");
+    };
+
+    recognition.onresult = (event) => {
+      let interimText = "";
+      let finalText = "";
+
+      for (
+        let index = event.resultIndex;
+        index < event.results.length;
+        index += 1
+      ) {
+        const transcript = event.results[index][0].transcript;
+
+        if (event.results[index].isFinal) {
+          finalText += transcript;
+        } else {
+          interimText += transcript;
+        }
+      }
+
+      if (finalText.trim()) {
+        const completedTranscript = finalText.trim();
+
+        setSentMessages((previousMessages) => [
+          ...previousMessages,
+          {
+            sender: "hearing",
+            text: completedTranscript,
+          },
+        ]);
+
+        setSpeechPreview(`Heard: ${completedTranscript}`);
+      } else {
+        setSpeechPreview(interimText || "Listening...");
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event.error);
+
+      if (event.error === "not-allowed") {
+        setSpeechPreview("Microphone permission was denied.");
+      } else if (event.error === "no-speech") {
+        setSpeechPreview("No speech was detected. Please try again.");
+      } else {
+        setSpeechPreview(`Speech recognition error: ${event.error}`);
+      }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
   }
 
   return (
@@ -430,7 +571,7 @@ function App() {
             onClick={sendMessage}
             disabled={!currentWord.trim()}
           >
-            Send Message
+            Send + Speak Aloud
           </button>
         </div>
 
@@ -455,20 +596,53 @@ function App() {
           </div>
 
           {sentMessages.map((message, index) => (
-            <div className="sent-message" key={`${message}-${index}`}>
-              <p className="message-author">ASL USER</p>
-              <p>{message}</p>
+            <div
+              className={
+                message.sender === "hearing"
+                  ? "sent-message hearing-message"
+                  : "sent-message"
+              }
+              key={`${message.sender}-${message.text}-${index}`}
+            >
+              <p className="message-author">
+                {message.sender === "hearing" ? "HEARING USER" : "ASL USER"}
+              </p>
+
+              <p>{message.text}</p>
             </div>
           ))}
-        </div>
 
         <div className="output-area">
           <p className="eyebrow hearing-text">CURRENT TRANSLATION</p>
+
           <div className="translation-output">
             {currentWord || "Waiting for a translated message..."}
           </div>
+
+          <div className="speech-controls">
+            <p className="eyebrow hearing-text">
+              HEARING USER — SPEECH TO TEXT
+            </p>
+
+            <button
+              className={
+                isListening
+                  ? "microphone-button listening"
+                  : "microphone-button"
+              }
+              onClick={toggleSpeechRecognition}
+              aria-pressed={isListening}
+            >
+              {isListening ? "Stop Listening" : "Start Listening"}
+            </button>
+
+            <p className="speech-preview" aria-live="polite">
+              {speechPreview}
+            </p>
+          </div>
         </div>
-      </main>
+      </div>
+    </main>
 
       <aside className="sidebar guide-sidebar">
         <section>
