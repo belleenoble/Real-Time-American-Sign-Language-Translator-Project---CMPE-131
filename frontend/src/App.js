@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
+const API_URL =
+  process.env.REACT_APP_API_URL || "http://127.0.0.1:5001";
+
 function App() {
   // camera references
   const videoRef = useRef(null);
@@ -149,7 +152,7 @@ function App() {
         const formData = new FormData();
         formData.append("image", imageBlob, "camera-frame.jpg");
 
-        const response = await fetch("http://127.0.0.1:5001/predict", {
+        const response = await fetch(`${API_URL}/predict`, {
           method: "POST",
           body: formData,
         });
