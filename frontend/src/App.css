@@ -327,6 +327,42 @@ button:disabled {
   padding: 28px;
 }
 
+.speech-controls {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.microphone-button {
+  border: 1px solid var(--hearing-purple);
+  background: transparent;
+  color: var(--hearing-purple);
+}
+
+.microphone-button:hover:not(:disabled),
+.microphone-button.listening {
+  background: var(--hearing-purple);
+  color: var(--background);
+}
+
+.speech-preview {
+  min-height: 24px;
+  margin: 12px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.hearing-message {
+  margin-right: auto;
+  margin-left: 0;
+  background: rgba(155, 114, 255, 0.08);
+  border-color: rgba(155, 114, 255, 0.35);
+}
+
+.hearing-message .message-author {
+  color: var(--hearing-purple);
+}
+
 .welcome-message {
   max-width: 680px;
   margin-left: auto;
