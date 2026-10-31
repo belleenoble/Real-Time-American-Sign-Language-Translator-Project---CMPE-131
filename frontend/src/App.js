@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 const API_URL =
-  process.env.REACT_APP_API_URL || "http://127.0.0.1:5001";
+  process.env.REACT_APP_API_URL || "REACT_APP_API_URL=http://127.0.0.1:5001";
 
 function App() {
   // camera references

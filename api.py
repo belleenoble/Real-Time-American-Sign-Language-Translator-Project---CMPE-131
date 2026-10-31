@@ -23,15 +23,28 @@ HandLandmarker = mp.tasks.vision.HandLandmarker
 HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
 RunningMode = mp.tasks.vision.RunningMode
 
-landmarker_options = HandLandmarkerOptions(
-    base_options=BaseOptions(model_asset_path=str(HAND_MODEL_PATH)),
-    running_mode=RunningMode.IMAGE,
-    num_hands=1,
-    min_hand_detection_confidence=0.5,
-    min_hand_presence_confidence=0.5,
-)
+landmarker = None
 
-landmarker = HandLandmarker.create_from_options(landmarker_options)
+
+def get_landmarker():
+    global landmarker
+
+    if landmarker is None:
+        landmarker_options = HandLandmarkerOptions(
+            base_options=BaseOptions(
+                model_asset_path=str(HAND_MODEL_PATH)
+            ),
+            running_mode=RunningMode.IMAGE,
+            num_hands=1,
+            min_hand_detection_confidence=0.5,
+            min_hand_presence_confidence=0.5,
+        )
+
+        landmarker = HandLandmarker.create_from_options(
+            landmarker_options
+        )
+
+    return landmarker
 
 
 def normalize_landmarks(landmarks, hand_name):
@@ -94,7 +107,7 @@ def predict():
         data=rgb_frame,
     )
 
-    result = landmarker.detect(media_pipe_image)
+    result = get_landmarker().detect(media_pipe_image)
 
     if not result.hand_landmarks:
         return jsonify({
