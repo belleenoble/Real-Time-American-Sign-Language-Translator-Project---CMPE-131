@@ -11,6 +11,8 @@ landmarks (x, y, z) per frame, followed by the sign label.
 """
 
 from __future__ import annotations
+from convert_images import normalize_landmarks
+from video_sources import make_source_record
 
 import argparse
 import csv
@@ -146,37 +148,98 @@ def main() -> int:
     parser.add_argument(
         "--append",
         action="store_true",
-        help="Append clips to an existing CSV instead of refusing to overwrite it",
+        help="Append clips to an existing CSV",
     )
     parser.add_argument(
         "--sequence-length",
         type=int,
         default=SEQUENCE_LENGTH,
-        help="Frames sampled per clip (must match the model training sequence length)",
+        help="Frames sampled per clip",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Check video hashes without converting or writing files",
     )
     args = parser.parse_args()
 
     if args.sequence_length != SEQUENCE_LENGTH:
         parser.error(
-            f"this project currently expects {SEQUENCE_LENGTH} frames per clip; "
-            "change train_model.py and the runtime model input together before using another value"
+            f"This project requires {SEQUENCE_LENGTH} frames per clip."
         )
 
     video_folder = args.video_folder.expanduser().resolve()
     output_path = args.output.expanduser().resolve()
+
     if not video_folder.is_dir():
-        parser.error(f"video folder does not exist: {video_folder}")
+        parser.error(f"Video folder does not exist: {video_folder}")
 
     videos = find_videos(video_folder)
     if not videos:
-        parser.error(f"no supported video files found under {video_folder}/J or {video_folder}/Z")
+        parser.error(
+            f"No supported video files found under "
+            f"{video_folder}/J or {video_folder}/Z"
+        )
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Finish dry run before checking or creating output files.
+    if args.dry_run:
+        sources = {}
+        duplicates = 0
+        conflicts = 0
+        errors = 0
+
+        for video_path, sign in videos:
+            try:
+                record = make_source_record(
+                    video_path,
+                    sign,
+                    video_folder,
+                )
+            except (OSError, ValueError, RuntimeError) as error:
+                print(f"ERROR: {video_path.name}: {error}")
+                errors += 1
+                continue
+
+            checksum = record["source_sha256"]
+            previous = sources.get(checksum)
+
+            if previous is None:
+                sources[checksum] = record
+
+            elif previous["label"] != record["label"]:
+                conflicts += 1
+                print(
+                    "LABEL CONFLICT: "
+                    f"{record['source_path']} and "
+                    f"{previous['source_path']}"
+                )
+
+            else:
+                duplicates += 1
+                print(
+                    "DUPLICATE: "
+                    f"{record['source_path']} matches "
+                    f"{previous['source_path']}"
+                )
+
+        print("\n=== Video Source Check ===")
+        print(f"Files found: {len(videos)}")
+        print(f"Unique file contents: {len(sources)}")
+        print(f"Duplicate files: {duplicates}")
+        print(f"Conflicting labels: {conflicts}")
+        print(f"Unreadable or changed files: {errors}")
+        print("Dry run complete. No files were written.")
+
+        return 1 if conflicts or errors else 0
+
+    # Normal conversion runs only without --dry-run.
     if output_path.exists() and not args.append:
         parser.error(
-            f"{output_path} already exists. Use --append to add to it, "
-            "or move/delete it first if you intend to regenerate the dataset."
+            f"{output_path} already exists. Choose a different --output "
+            "for a new dataset, or use --append only when intentional."
         )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     mode = "a" if args.append and output_path.exists() else "w"
     needs_header = mode == "w" or output_path.stat().st_size == 0
@@ -184,37 +247,68 @@ def main() -> int:
     skipped = 0
 
     options = mp.tasks.vision.HandLandmarkerOptions(
-        base_options=mp.tasks.BaseOptions(model_asset_path=str(
-            Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
-        )),
+        base_options=mp.tasks.BaseOptions(
+            model_asset_path=str(
+                Path(__file__).resolve().parent
+                / "models"
+                / "hand_landmarker.task"
+            )
+        ),
         running_mode=mp.tasks.vision.RunningMode.IMAGE,
         num_hands=2,
         min_hand_detection_confidence=0.5,
         min_hand_presence_confidence=0.5,
         min_tracking_confidence=0.5,
     )
-    with mp.tasks.vision.HandLandmarker.create_from_options(options) as hands, output_path.open(mode, newline="", encoding="utf-8") as csv_file:
+
+    with (
+        mp.tasks.vision.HandLandmarker.create_from_options(options) as hands,
+        output_path.open(mode, newline="", encoding="utf-8") as csv_file,
+    ):
         writer = csv.writer(csv_file)
+
         if needs_header:
             writer.writerow(CSV_HEADER)
 
         for index, (video_path, sign) in enumerate(videos, start=1):
-            print(f"[{index}/{len(videos)}] Processing {sign}: {video_path.name}")
-            features = sample_video(video_path, hands, args.sequence_length)
+            print(
+                f"[{index}/{len(videos)}] Processing "
+                f"{sign}: {video_path.name}"
+            )
+
+            features = sample_video(
+                video_path,
+                hands,
+                args.sequence_length,
+            )
+
             if features is None:
                 skipped += 1
                 continue
+
             if len(features) != FEATURE_COUNT:
-                print(f"Warning: unexpected feature count for {video_path}; skipping")
+                print(
+                    f"Warning: unexpected feature count: {video_path}"
+                )
                 skipped += 1
                 continue
+
             writer.writerow([*features, sign])
             written += 1
 
-    print(f"Done. Added {written} clips; skipped {skipped}. CSV: {output_path}")
+    print(
+        f"Done. Added {written} clips; "
+        f"skipped {skipped}. CSV: {output_path}"
+    )
+
     if written == 0:
-        print("No usable clips were added. Check that each video shows a visible hand.", file=sys.stderr)
+        print(
+            "No usable clips were added. "
+            "Check that the hand is visible.",
+            file=sys.stderr,
+        )
         return 1
+
     return 0
 
 
