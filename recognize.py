@@ -1,16 +1,18 @@
-from collections import deque
-
 import time
+from pathlib import Path
 
 import cv2
 import joblib
 import mediapipe as mp
 import numpy as np
 
+from motion_recognition import MotionRecognizer
 
-MODEL_PATH = "models/hand_landmarker.task"
-STATIC_MODEL_PATH = "models/static_sign_classifier.joblib"
-MOTION_MODEL_PATH = "models/motion_sign_classifier.joblib"
+
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_PATH = str(BASE_DIR / "models/hand_landmarker.task")
+STATIC_MODEL_PATH = BASE_DIR / "models/static_sign_classifier.joblib"
+MOTION_MODEL_PATH = BASE_DIR / "models/motion_sign_classifier.joblib"
 
 # Minimum prediction confidence required before a sign is trusted.
 # Anything below this is treated as "unrecognized" (User Story 2).
@@ -21,16 +23,6 @@ MOTION_CONFIDENCE_THRESHOLD = 0.9
 # how many consecutive frames must agree before a letter is committed
 # to the word. Higher = more stable but slower to react.
 STABILITY_FRAMES = 25
-
-#for motion signs
-#needs to match SEQUENCE_LENGTH in collect_data.py
-MOTION_SEQUENCE_LENGTH = 20 
-
-#motion signs get fewer, noiser windows than static so it needs to be more stable
-MOTION_STABILITY_FRAMES = 5
-
-#how often (in frames) to run the motion model prediction
-MOTION_CHECK_INTERVAL = 4
 
 WORD_BREAK_FRAMES = 30  # how many frames of no hand before the current word is reset
 
@@ -70,8 +62,11 @@ try:
 except FileNotFoundError:
     motion_model = None
     print(
-        f"No motion model found at {'MOTION_MODEL_PATH'}. Motion signs will not be recognized."
+        f"No motion model found at {MOTION_MODEL_PATH}. Motion signs will not be recognized."
     )
+
+motion = MotionRecognizer(motion_model, MOTION_CONFIDENCE_THRESHOLD) if motion_model is not None else None
+print("Press M to start a J/Z gesture, then M again to classify it. C clears; ESC quits.")
 
 BaseOptions = mp.tasks.BaseOptions
 HandLandmarker = mp.tasks.vision.HandLandmarker
@@ -95,12 +90,9 @@ if not camera.isOpened():
 
 # Recognition / word-building state
 recent_static_predictions = []
-motion_frame_buffer = deque(maxlen=MOTION_SEQUENCE_LENGTH)
-recent_motion_predictions =[]
 
 current_word = ""
 sentence =""
-frame_count = 0
 last_committed_sign = None
 frames_since_hand_seen = 0
 word_break_triggered =False
@@ -134,11 +126,9 @@ try:
 
             result = landmarker.detect_for_video(mp_image, timestamp)
 
-            frame_count += 1
             static_sign = None
-            confidence = 0.0
-            motion_sign = None
-            motion_confidence =0.0
+            static_confidence = 0.0
+            now = timestamp / 1000.0
 
             if result.hand_landmarks:
                 frames_since_hand_seen = 0
@@ -161,7 +151,16 @@ try:
                 static_sign = static_model.classes_[best_static_index]
                 static_confidence = static_probabilities[best_static_index]
 
-                if static_confidence >= CONFIDENCE_THRESHOLD:
+                motion_sign = motion.observe(features, now) if motion else None
+                if motion_sign is not None:
+                    if motion_sign != last_committed_sign:
+                        current_word += motion_sign
+                        last_committed_sign = motion_sign
+                    recent_static_predictions = []
+
+                # Manual gesture capture suppresses static-letter commits.
+                # Static predictions must never erase the motion history.
+                elif not (motion and motion.recording) and static_confidence >= CONFIDENCE_THRESHOLD:
                     recent_static_predictions.append(static_sign)
                     recent_static_predictions = recent_static_predictions[-STABILITY_FRAMES:]
 
@@ -174,48 +173,14 @@ try:
                         current_word += static_sign
                         last_committed_sign = static_sign
                         recent_static_predictions = []
-                        motion_frame_buffer.clear() #clear motion buffer when a static sign is committed
-                        recent_motion_predictions = []
                 else:
                     recent_static_predictions = []
-
-                #motion sign preritctions
-                if motion_model is not None:
-                    motion_frame_buffer.append(features)
-
-                    if (len(motion_frame_buffer) >= MOTION_SEQUENCE_LENGTH 
-                    and frame_count % MOTION_CHECK_INTERVAL == 0 
-                    ):
-                        flat_seqeunce = np.concatenate(motion_frame_buffer)
-                        motion_probabilities = motion_model.predict_proba([flat_seqeunce])[0]
-                        best_motion_index = np.argmax(motion_probabilities)
-                        motion_sign = motion_model.classes_[best_motion_index]
-                        motion_confidence = motion_probabilities[best_motion_index]
-
-                        if motion_confidence >= MOTION_CONFIDENCE_THRESHOLD:
-                            recent_motion_predictions.append(motion_sign)
-                            recent_motion_predictions = (recent_motion_predictions[-MOTION_STABILITY_FRAMES:])
-
-                            is_motion_stable = (
-                                len(recent_motion_predictions) == MOTION_STABILITY_FRAMES
-                                and len(set(recent_motion_predictions)) == 1
-                            )
-
-                            if (is_motion_stable and motion_sign != last_committed_sign):
-                                current_word += motion_sign
-                                last_committed_sign = motion_sign
-                                recent_motion_predictions = []
-                                motion_frame_buffer.clear() #clear motion buffer when a motion sign is committed
-                                recent_static_predictions = []
-
-                        else:
-                            recent_motion_predictions = []
 
             else:
                 frames_since_hand_seen += 1
                 recent_static_predictions = []
-                motion_frame_buffer.clear()
-                recent_motion_predictions = []
+                if motion:
+                    motion.observe(None, now)
 
                 if frames_since_hand_seen >= LETTER_RESET_FRAMES:
                     last_committed_sign = None
@@ -266,27 +231,18 @@ try:
                 motion_status = "No motion model loaded"
                 motion_color = (128, 128, 128)
 
-            elif motion_sign is not None:
-                motion_status = (
-                    f"Motion: {motion_sign} "
-                    f"({motion_confidence * 100:.0f}% confidence)"
-                )
-                motion_color = (0, 255, 0) if motion_confidence >= CONFIDENCE_THRESHOLD else (0, 0, 255)
             else:
-                buffered = len(motion_frame_buffer)
-                motion_status = (
-                    f"Motion: {buffered}/{MOTION_SEQUENCE_LENGTH} frames buffered"
-                )
-                motion_color = (255, 255, 0)  # Yellow for buffering
+                motion_status = motion.status
+                motion_color = (0, 255, 0) if motion.accepted else (0, 200, 255)
 
             cv2.putText(
                 frame, motion_status, (10, 135),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, motion_color, 2
+                cv2.FONT_HERSHEY_SIMPLEX, min(0.6, (width - 20) / max(1, cv2.getTextSize(motion_status, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0][0])), motion_color, 2
             )
             
             cv2.putText(
                 frame,
-                "Press C to clear word, ESC to quit",
+                "M: start/finish J/Z gesture | C: clear | ESC: quit",
                 (10, height - 15),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2
             )
@@ -298,12 +254,20 @@ try:
             if key == 27:  # ESC key exits data collection; Q remains available as a sign:
                 break
 
-            if key == ord("c"):
+            if key in (ord("c"), ord("C")):
                 current_word = ""
                 last_committed_sign = None
                 recent_static_predictions = []
-                motion_frame_buffer.clear()
-                recent_motion_predictions = []
+                if motion:
+                    motion.reset()
+
+            if key in (ord("m"), ord("M")) and motion:
+                motion_sign = motion.toggle_recording(now)
+                recent_static_predictions = []
+                if motion_sign is not None:
+                    # Each explicit recording is a separate intentional gesture.
+                    current_word += motion_sign
+                    last_committed_sign = motion_sign
 
             #option to let words break manually (for sentences)
 
