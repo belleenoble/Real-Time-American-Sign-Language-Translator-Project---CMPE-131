@@ -11,7 +11,10 @@ landmarks (x, y, z) per frame, followed by the sign label.
 """
 
 from __future__ import annotations
+from video_sources import calculate_video_hash, make_source_record
+from motion_dataset import MotionDataset
 
+import math
 import argparse
 import csv
 import sys
@@ -128,93 +131,260 @@ def sample_video(video_path: Path, hands, sequence_length: int) -> list[float] |
     return flattened
 
 
-def main() -> int:
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="Convert J/ and Z/ video folders into data/motion_landmarks.csv"
+        description="Convert J/Z videos with source tracking and deduplication"
     )
-    parser.add_argument(
-        "video_folder",
-        type=Path,
-        help="Folder containing J and Z subfolders of video clips",
-    )
+    parser.add_argument("video_folder", type=Path)
     parser.add_argument(
         "--output",
         type=Path,
         default=Path("data/motion_landmarks.csv"),
-        help="Output CSV path (default: data/motion_landmarks.csv)",
     )
     parser.add_argument(
         "--append",
         action="store_true",
-        help="Append clips to an existing CSV instead of refusing to overwrite it",
+        help="Append only to a dataset with a matching source manifest",
     )
     parser.add_argument(
         "--sequence-length",
         type=int,
         default=SEQUENCE_LENGTH,
-        help="Frames sampled per clip (must match the model training sequence length)",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Check source hashes without writing files",
+    )
+    parser.add_argument(
+        "--limit-per-label",
+        type=int,
+        help="Process at most this many input files per label",
+    )
+    args = parser.parse_args(argv)
 
     if args.sequence_length != SEQUENCE_LENGTH:
         parser.error(
-            f"this project currently expects {SEQUENCE_LENGTH} frames per clip; "
-            "change train_model.py and the runtime model input together before using another value"
+            f"This project requires {SEQUENCE_LENGTH} frames per clip."
         )
+
+    if args.limit_per_label is not None and args.limit_per_label < 1:
+        parser.error("--limit-per-label must be at least 1.")
 
     video_folder = args.video_folder.expanduser().resolve()
-    output_path = args.output.expanduser().resolve()
+    output_path = args.output.expanduser().absolute()
+
     if not video_folder.is_dir():
-        parser.error(f"video folder does not exist: {video_folder}")
+        parser.error(f"Video folder does not exist: {video_folder}")
 
-    videos = find_videos(video_folder)
-    if not videos:
-        parser.error(f"no supported video files found under {video_folder}/J or {video_folder}/Z")
+    all_videos = find_videos(video_folder)
+    if not all_videos:
+        parser.error("No supported videos were found in J/ or Z/.")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    if output_path.exists() and not args.append:
+    videos = []
+    selected = {label: 0 for label in SIGNS}
+
+    for path, label in all_videos:
+        if (
+            args.limit_per_label is None
+            or selected[label] < args.limit_per_label
+        ):
+            videos.append((path, label))
+            selected[label] += 1
+
+    sources = {}
+    unique_videos = []
+    duplicate_inputs = 0
+    conflicts = 0
+    errors = 0
+
+    for video_path, sign in videos:
+        try:
+            record = make_source_record(
+                video_path, sign, video_folder
+            )
+        except (OSError, ValueError, RuntimeError) as error:
+            print(f"ERROR: {video_path.name}: {error}")
+            errors += 1
+            continue
+
+        previous = sources.get(record["source_sha256"])
+
+        if previous is None:
+            sources[record["source_sha256"]] = record
+            unique_videos.append((video_path, record))
+
+        elif previous["label"] != sign:
+            conflicts += 1
+            print(
+                "LABEL CONFLICT: "
+                f"{record['source_path']} and "
+                f"{previous['source_path']}"
+            )
+
+        else:
+            duplicate_inputs += 1
+            print(
+                "DUPLICATE: "
+                f"{record['source_path']} matches "
+                f"{previous['source_path']}"
+            )
+
+    print("\n=== Video Source Check ===")
+    print(f"Files found: {len(all_videos)}")
+    print(f"Files selected: {len(videos)}")
+    print(f"Unique file contents: {len(sources)}")
+    print(f"Duplicate files: {duplicate_inputs}")
+    print(f"Conflicting labels: {conflicts}")
+    print(f"Unreadable or changed files: {errors}")
+
+    if args.dry_run:
+        print("Dry run complete. No files were written.")
+        return 1 if conflicts or errors else 0
+
+    if conflicts or errors:
         parser.error(
-            f"{output_path} already exists. Use --append to add to it, "
-            "or move/delete it first if you intend to regenerate the dataset."
+            "Source checks failed. No dataset changes were made."
         )
 
-    mode = "a" if args.append and output_path.exists() else "w"
-    needs_header = mode == "w" or output_path.stat().st_size == 0
-    written = 0
-    skipped = 0
+    if output_path.exists() and not args.append:
+        parser.error(
+            "Output already exists. Choose a NEW --output."
+        )
 
-    options = mp.tasks.vision.HandLandmarkerOptions(
-        base_options=mp.tasks.BaseOptions(model_asset_path=str(
-            Path(__file__).resolve().parent / "models" / "hand_landmarker.task"
-        )),
-        running_mode=mp.tasks.vision.RunningMode.IMAGE,
-        num_hands=2,
-        min_hand_detection_confidence=0.5,
-        min_hand_presence_confidence=0.5,
-        min_tracking_confidence=0.5,
+    model_path = (
+        Path(__file__).resolve().parent
+        / "models"
+        / "hand_landmarker.task"
     )
-    with mp.tasks.vision.HandLandmarker.create_from_options(options) as hands, output_path.open(mode, newline="", encoding="utf-8") as csv_file:
-        writer = csv.writer(csv_file)
-        if needs_header:
-            writer.writerow(CSV_HEADER)
+    normalizer_path = (
+        Path(__file__).resolve().parent / "convert_images.py"
+    )
 
-        for index, (video_path, sign) in enumerate(videos, start=1):
-            print(f"[{index}/{len(videos)}] Processing {sign}: {video_path.name}")
-            features = sample_video(video_path, hands, args.sequence_length)
-            if features is None:
-                skipped += 1
-                continue
-            if len(features) != FEATURE_COUNT:
-                print(f"Warning: unexpected feature count for {video_path}; skipping")
-                skipped += 1
-                continue
-            writer.writerow([*features, sign])
-            written += 1
+    try:
+        signature = {
+            "sequence_length": SEQUENCE_LENGTH,
+            "hand_model_sha256": calculate_video_hash(model_path),
+            "normalizer_file_sha256": calculate_video_hash(
+                normalizer_path
+            ),
+            "mediapipe_version": mp.__version__,
+        }
 
-    print(f"Done. Added {written} clips; skipped {skipped}. CSV: {output_path}")
-    if written == 0:
-        print("No usable clips were added. Check that each video shows a visible hand.", file=sys.stderr)
+        dataset = MotionDataset(
+            output_path,
+            CSV_HEADER,
+            append=args.append,
+            signature=signature,
+        )
+
+        pending = []
+        existing_duplicates = 0
+
+        for video_path, record in unique_videos:
+            if dataset.contains(record):
+                existing_duplicates += 1
+                print(
+                    f"ALREADY IN DATASET: {record['source_path']}"
+                )
+            else:
+                pending.append((video_path, record))
+
+        skipped = 0
+
+        if pending:
+            options = mp.tasks.vision.HandLandmarkerOptions(
+                base_options=mp.tasks.BaseOptions(
+                    model_asset_path=str(model_path)
+                ),
+                running_mode=mp.tasks.vision.RunningMode.IMAGE,
+                num_hands=2,
+                min_hand_detection_confidence=0.5,
+                min_hand_presence_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
+
+            with mp.tasks.vision.HandLandmarker.create_from_options(
+                options
+            ) as hands:
+                for index, (video_path, record) in enumerate(
+                    pending, start=1
+                ):
+                    print(
+                        f"[{index}/{len(pending)}] Processing "
+                        f"{record['label']}: "
+                        f"{record['source_path']}"
+                    )
+
+                    features = sample_video(
+                        video_path,
+                        hands,
+                        SEQUENCE_LENGTH,
+                    )
+
+                    if features is None:
+                        skipped += 1
+                        continue
+
+                    if (
+                        len(features) != FEATURE_COUNT
+                        or not all(
+                            math.isfinite(float(value))
+                            for value in features
+                        )
+                    ):
+                        skipped += 1
+                        print("SKIPPED: invalid feature values")
+                        continue
+
+                    if (
+                        calculate_video_hash(video_path)
+                        != record["source_sha256"]
+                    ):
+                        raise ValueError(
+                            "A source video changed during conversion. "
+                            "No new rows were saved."
+                        )
+
+                    record["sampled_frames"] = SEQUENCE_LENGTH
+                    dataset.add(features, record)
+
+        if (
+            calculate_video_hash(model_path)
+            != signature["hand_model_sha256"]
+            or calculate_video_hash(normalizer_path)
+            != signature["normalizer_file_sha256"]
+        ):
+            raise ValueError(
+                "Conversion assets changed while processing. "
+                "No new rows were saved."
+            )
+
+        added = dataset.save()
+
+    except (OSError, ValueError, RuntimeError, cv2.error) as error:
+        parser.error(str(error))
+
+    print("\n=== Conversion Summary ===")
+    print(f"Added rows: {added}")
+    print(f"Duplicate input files: {duplicate_inputs}")
+    print(f"Already in dataset: {existing_duplicates}")
+    print(f"Skipped videos: {skipped}")
+    print(f"Total dataset rows: {len(dataset.entries)}")
+
+    if dataset.output.exists() and dataset.manifest.exists():
+        print(f"CSV: {dataset.output}")
+        print(f"Manifest: {dataset.manifest}")
+    else:
+        print("No dataset files were created.")
+
+    if added == 0 and existing_duplicates == 0:
+        print(
+            "No usable new samples were converted.",
+            file=sys.stderr,
+        )
         return 1
+
     return 0
 
 
